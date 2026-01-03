@@ -47,14 +47,7 @@ python mvic.py --run 0.80 20
 
 ## Outputs
 
-After each run, the script writes CSV files in the project folder, with a prefix matching the contraction intensity (`con`). Example files:
-
-- `0.80 A - Target - Act - Strength (no adapt) - Force - Strength (w adapt).csv`
-- `0.80 B - Firing Rate.csv`
-- `0.80 C - Individual MU Force Time-History.csv`
-- `0.80 D - MU Capacity - relative.csv`
-
-It also prints endurance-time information to the console.
+After each run, the script prints endurance-time information to the console.
 
 ## Virtual Environment (Windows)
 

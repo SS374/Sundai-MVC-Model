@@ -9,11 +9,150 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 import os
+import sys
+import subprocess
+import tkinter as tk
+
+_CLI_FTHSCALE = None
+_CLI_FTHTIME = None
+
+if '--run' in sys.argv:
+    run_i = sys.argv.index('--run')
+    if len(sys.argv) <= run_i + 2:
+        raise SystemExit("Usage: mvic.py --run <fthscale> <fthtime>")
+    _CLI_FTHSCALE = float(sys.argv[run_i + 1])
+    _CLI_FTHTIME = float(sys.argv[run_i + 2])
+else:
+    # Create main window with modern styling
+    root = tk.Tk()
+    root.title('MU-based Fatigue Model')
+    
+    # Set window size and center it on screen
+    window_width = 400
+    window_height = 300
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    center_x = int(screen_width/2 - window_width/2)
+    center_y = int(screen_height/2 - window_height/2)
+    root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+    
+    # Configure style
+    root.configure(bg='#f0f0f0')
+    root.resizable(False, False)
+    
+    # Create main container with padding
+    main_frame = tk.Frame(root, bg='#f0f0f0', padx=20, pady=20)
+    main_frame.pack(expand=True, fill='both')
+    
+    # Add title
+    title_frame = tk.Frame(main_frame, bg='#f0f0f0')
+    title_frame.pack(fill='x', pady=(0, 20))
+    tk.Label(title_frame, 
+             text='Motor Unit Control Simulation', 
+             font=('Helvetica', 14, 'bold'), 
+             bg='#f0f0f0').pack()
+    
+    # Create input fields frame
+    input_frame = tk.Frame(main_frame, bg='#f0f0f0')
+    input_frame.pack(fill='x', pady=10)
+    
+    # Configure grid weights
+    input_frame.columnconfigure(1, weight=1)
+    
+    # Input fields
+    fthscale_var = tk.StringVar(value='80')
+    fthtime_var = tk.StringVar(value='20')
+    error_var = tk.StringVar(value='')
+    
+    # Configure consistent column widths
+    input_frame.columnconfigure(0, minsize=200)  # Label column
+    input_frame.columnconfigure(1, minsize=150)  # Entry column
+    
+    # Common entry style
+    entry_style = {
+        'width': 5,  # Standardized to 5 characters
+        'font': ('Helvetica', 10),
+        'relief': 'solid',
+        'borderwidth': 1
+    }
+    
+    # Percentage of MVIC
+    tk.Label(input_frame, 
+             text='Percentage of MVIC (0-100%):', 
+             bg='#f0f0f0',
+             font=('Helvetica', 10)).grid(row=0, column=0, sticky='w', pady=5)
+    percent_entry = tk.Entry(input_frame, 
+                           textvariable=fthscale_var, 
+                           **entry_style)
+    percent_entry.grid(row=0, column=1, sticky='w', pady=5, padx=5)
+    
+    # Time in seconds
+    tk.Label(input_frame, 
+             text='Duration (seconds):', 
+             bg='#f0f0f0',
+             font=('Helvetica', 10)).grid(row=1, column=0, sticky='w', pady=5)
+    time_entry = tk.Entry(input_frame, 
+                         textvariable=fthtime_var, 
+                         **entry_style)
+    time_entry.grid(row=1, column=1, sticky='w', pady=5, padx=5)
+    
+    # Error message
+    error_label = tk.Label(main_frame, 
+                          textvariable=error_var, 
+                          fg='red', 
+                          bg='#f0f0f0',
+                          wraplength=350,
+                          justify='left')
+    error_label.pack(pady=(10, 0))
+    
+    def _on_graph():
+        try:
+            s = float(fthscale_var.get())/100
+            t = float(fthtime_var.get())
+            if t <= 0:
+                raise ValueError('Duration must be greater than 0')
+            if s <= 0 or s > 1:
+                raise ValueError('MVIC percentage must be between 0 and 100')
+            error_var.set('')
+            subprocess.Popen([sys.executable, __file__, '--run', str(s), str(t)])
+        except ValueError as e:
+            error_var.set(f'Error: {str(e)}')
+        except Exception as e:
+            error_var.set(f'Unexpected error: {str(e)}')
+    
+    # Button with improved styling
+    button_frame = tk.Frame(main_frame, bg='#f0f0f0')
+    button_frame.pack(pady=(20, 0))
+    
+    graph_button = tk.Button(button_frame, 
+                           text='Run Simulation', 
+                           command=_on_graph, 
+                           width=20,
+                           bg='#4CAF50',
+                           fg='white',
+                           font=('Helvetica', 10, 'bold'),
+                           relief='flat',
+                           padx=10,
+                           pady=5)
+    graph_button.pack()
+    
+    # Add hover effects
+    def on_enter(e):
+        graph_button['bg'] = '#45a049'
+    
+    def on_leave(e):
+        graph_button['bg'] = '#4CAF50'
+    
+    graph_button.bind('<Enter>', on_enter)
+    graph_button.bind('<Leave>', on_leave)
+
+    root.mainloop()
+    raise SystemExit(0)
 
 # -------------------------
 # Model input parameters
 # -------------------------
-nu = 120  # number of neurons (motor units)
+nu = 120  # number of neurons (motor units) - optimized for 120
 samprate = 10  # sample rate (Hz)
 res = 100  # resolution of activations (100 -> 0.01 activation resolution)
 hop = 20  # hopping factor for excitation search
@@ -41,6 +180,11 @@ tL = 90  # longest contraction time (ms in original; code uses same units)
 fthscale = 1  # sets %MVC level for the trial duration (100% MVC is 1.00)
 con = '0.50'  # for output file names
 fthtime = 100  # duration to run trial (seconds)
+
+if _CLI_FTHSCALE is not None:
+    fthscale = float(_CLI_FTHSCALE)
+if _CLI_FTHTIME is not None:
+    fthtime = float(_CLI_FTHTIME)
 
 # -------------------------
 # Derived sizes and arrays
@@ -184,8 +328,6 @@ timer = 0
 # Main loop: move through force time-history and determine excitation required
 # -------------------------
 for i in range(fthsamp):
-    # print a timer value every ~60 seconds of simulated time (MATLAB used a conditional)
-
     force_idx = int(round(fth[i] * 100.0)) + 1
     if force_idx > 100:
         force_idx = 100
@@ -335,7 +477,7 @@ np.savetxt(f"{con} D - MU Capacity - relative.csv", muForceCapacityRel.T, delimi
 # -------------------------
 time = ns / samprate
 
-fig, axes = plt.subplots(2, 2, figsize=(100, 10))
+fig, axes = plt.subplots(2, 2, figsize=(12, 7))
 axA = axes[0, 0]
 axB = axes[0, 1]
 axC = axes[1, 0]
@@ -391,18 +533,20 @@ if endurtime is not None:
 # Panel A: excitation
 if endurtime is not None:
     axA.axvline(endurtime, color='k', linestyle=':', label=f'Endurance time ({endurtime:.1f}s)')
-axA.plot(time, excitation, color='green', label='Excitation (% of max at endurance)', linewidth=2)
-axA.set_ylim(0, 110)  # Slightly above 100% for better visibility
+axA.plot(time, np.clip(excitation, 0, 100), color='green', label='Excitation (% of max at endurance)', linewidth=2)
+axA.set_ylim(0, 100)  # Fixed 0-100% range for Panel A
 axA.set_ylabel('Percentage of maximum')
 axA.set_title('Panel A: Excitation')
 
 # Panel B: firing rates
+# Only plot MUs with non-zero firing rates
 for mu in range(nu):
     if np.any(mufrFAT[mu, :] > 0):  # Only plot if MU has non-zero firing rate
         axB.plot(time, mufrFAT[mu, :], color='lightblue', linewidth=0.5)
 
 # highlight specific MUs: 1, 20, 40, 60, 80, 100, 120
-highlight_mus = [0, 19, 39, 59, 79, 99, 119]  # 0-based indices
+# but only if they have non-zero firing rates
+highlight_mus = [mu for mu in [0, 19, 39, 59, 79, 99, 119] if mu < nu and np.any(mufrFAT[mu, :] > 0)]
 highlight_colors = {
     0: 'darkred',
     19: 'red',
@@ -413,20 +557,20 @@ highlight_colors = {
     119: 'darkviolet'
 }
 for mu in highlight_mus:
-    if mu < nu and np.any(mufrFAT[mu, :] > 0):  # Only plot if MU has non-zero firing rate
-        axB.plot(time, mufrFAT[mu, :], linewidth=1.5, color=highlight_colors.get(mu, None), label=f'MU {mu+1}')
+    axB.plot(time, mufrFAT[mu, :], linewidth=1.5, color=highlight_colors.get(mu, None), label=f'MU {mu+1}')
 axB.set_ylabel('Firing rate (imp/s)')
 axB.set_title('Panel B: MU firing rates over time')
 if endurtime is not None:
     axB.axvline(endurtime, color='k', linestyle=':', label=f'Endurance time ({endurtime:.1f}s)')
 
 # Panel C: MU force contributions
+# Only plot MUs with non-zero force contributions
 for mu in range(nu):
-    if np.any(mufrFAT[mu, :] > 0):  # Only plot if MU has non-zero firing rate
+    if np.any(muPt[mu, :] > 0):  # Only plot if MU has non-zero force contribution
         axC.plot(time, muPt[mu, :], color='lightgray', linewidth=0.5)
-# highlight the same specific MUs as in Panel B
+# highlight the same specific MUs as in Panel B, but only if they have non-zero force
 for mu in highlight_mus:
-    if mu < nu and np.any(mufrFAT[mu, :] > 0):  # Only plot if MU has non-zero firing rate
+    if np.any(muPt[mu, :] > 0):  # Only plot if MU has non-zero force contribution
         axC.plot(time, muPt[mu, :], linewidth=1.5, color=highlight_colors.get(mu, None), label=f'MU {mu+1}')
 axC.set_ylabel('MU force contribution')
 axC.set_title('Panel C: MU force contributions over time')
@@ -444,13 +588,114 @@ axD.plot(mu_indices, fc_at_end, marker='o', markersize=3, linestyle='-', color='
 # mark exhausted MUs (FC <= 5%)
 exhausted_mask = fc_at_end <= 5.0
 axD.plot(mu_indices[exhausted_mask], fc_at_end[exhausted_mask], 'ro', markersize=3, label='Exhausted (<=5%)')
+axD.set_ylim(0, 100)  # Set y-axis to 0-100%
 axD.set_xlabel('MU index')
 axD.set_ylabel('Force capacity at endurance time (% max)')
 axD.set_title('Panel D: MU force capacity at endurance time')
 axD.set_xlim(0, nu)  # Set x-axis limit to show all motor units
 
+# Track all MUs we want to check (1, 20, 40, 60, 80, 100, 120)
+target_mus = [1, 20, 40, 60, 80, 100, 120]
+mu_activation_times = []
+non_activated_mus = []
+
+for mu in [m-1 for m in target_mus]:  # Convert to 0-based index
+    if mu < nu:
+        # Find first index where force > 0
+        force_nonzero = np.where(muPt[mu, :] > 0)[0]
+        if len(force_nonzero) > 0:
+            first_activation = time[force_nonzero[0]]
+            # Set activation time to 0 if less than 1 second
+            if first_activation < 1.0:
+                first_activation = 0.0
+            mu_activation_times.append((mu + 1, first_activation))
+        else:
+            non_activated_mus.append(mu + 1)  # Store 1-based index
+
+# Calculate additional metrics
+# 1. Average force output as % of target
+if len(total_force_capacity) > 0:
+    avg_force_pct = np.mean(total_force_capacity)
+    target_force_pct = fth[0] * 100  # Convert to percentage
+    force_error_pct = ((avg_force_pct - target_force_pct) / target_force_pct) * 100
+    force_accuracy = f'{avg_force_pct:.1f}% (Target: {target_force_pct:.1f}%)'
+
+# 2. Time to 80% MU recruitment
+sorted_activation_times = sorted([t[1] for t in mu_activation_times])
+if sorted_activation_times:
+    idx_80pct = min(int(len(sorted_activation_times) * 0.8), len(sorted_activation_times) - 1)
+    time_to_80pct = sorted_activation_times[idx_80pct] if idx_80pct >= 0 else 0
+else:
+    time_to_80pct = np.nan
+
+# Create statistics text
+stats_text = []
+if endurtime is not None:
+    stats_text.append(f'Endurance Time: {endurtime:.2f} s')
+
+# Add performance metrics
+stats_text.append(f'Avg Force Output: {force_accuracy}')
+stats_text.append(f'Time to 80% MU Recruited: {time_to_80pct:.2f} s')
+
+# Calculate recruitment percentage
+activated_count = len(mu_activation_times)
+total_checked = len([m for m in target_mus if m <= nu])
+recruitment_pct = (activated_count / total_checked) * 100 if total_checked > 0 else 0
+
+# Add recruitment percentage and rating
+stats_text.append(f'Motor Unit Recruitment: {recruitment_pct:.1f}%')
+
+# Determine hypertrophy rating
+if recruitment_pct < 70:
+    rating = 'Bad'
+elif recruitment_pct < 80:
+    rating = 'Okay'
+elif recruitment_pct < 90:
+    rating = 'Good'
+else:
+    rating = 'Great'
+
+stats_text.append(f'Hypertrophy Potential: {rating}\n')
+
+# Add activated MUs
+if mu_activation_times:
+    stats_text.append('Activated MUs:')
+    for mu_num, act_time in sorted(mu_activation_times):
+        stats_text.append(f'  MU{mu_num} @{act_time:.2f} s')
+
+# Add non-activated MUs
+if non_activated_mus:
+    stats_text.append('\nNot Activated MUs:')
+    # Group consecutive MUs for cleaner display
+    non_activated_mus.sort()
+    ranges = []
+    if non_activated_mus:
+        start = non_activated_mus[0]
+        prev = start
+        for mu in non_activated_mus[1:]:
+            if mu != prev + 1:
+                if start == prev:
+                    ranges.append(str(start))
+                else:
+                    ranges.append(f'{start}-{prev}')
+                start = mu
+            prev = mu
+        if start == prev:
+            ranges.append(str(start))
+        else:
+            ranges.append(f'{start}-{prev}')
+    stats_text.append('  ' + ', '.join(ranges))
+
+# Add text box with statistics
+stats_str = '\n'.join(stats_text)
+fig.text(0.98, 0.02, stats_str, 
+         verticalalignment='bottom', horizontalalignment='right',
+         bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray', boxstyle='round,pad=0.5'),
+         fontsize=9, family='monospace')
+
+# Adjust layout to make room for the text box
 fig = plt.gcf()
-fig.tight_layout(rect=(0.18, 0.0, 0.82, 1.0), h_pad=2.0, w_pad=3.0)
+fig.tight_layout(rect=(0.18, 0.0, 0.98, 1.0), h_pad=2.0, w_pad=3.0)
 fig.subplots_adjust(hspace=0.45, wspace=0.55)
 
 # Move legends outside each quadrant without overlapping neighboring panels

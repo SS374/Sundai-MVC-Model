@@ -7,6 +7,8 @@ Dependencies: numpy, matplotlib
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as mpl_animation
+from matplotlib.colors import LinearSegmentedColormap
 import csv
 import os
 import sys
@@ -15,6 +17,7 @@ import tkinter as tk
 
 _CLI_FTHSCALE = None
 _CLI_FTHTIME = None
+_CLI_ANIMATE = False
 
 if '--run' in sys.argv:
     run_i = sys.argv.index('--run')
@@ -22,6 +25,7 @@ if '--run' in sys.argv:
         raise SystemExit("Usage: mvic.py --run <fthscale> <fthtime>")
     _CLI_FTHSCALE = float(sys.argv[run_i + 1])
     _CLI_FTHTIME = float(sys.argv[run_i + 2])
+    _CLI_ANIMATE = '--animate' in sys.argv
 else:
     # Create main window with modern styling
     root = tk.Tk()
@@ -95,6 +99,16 @@ else:
                          textvariable=fthtime_var, 
                          **entry_style)
     time_entry.grid(row=1, column=1, sticky='w', pady=5, padx=5)
+
+    animate_var = tk.BooleanVar(value=True)
+    animate_check = tk.Checkbutton(
+        input_frame,
+        text='Realtime MU animation',
+        variable=animate_var,
+        bg='#f0f0f0',
+        font=('Helvetica', 10)
+    )
+    animate_check.grid(row=2, column=0, columnspan=2, sticky='w', pady=(10, 0))
     
     # Error message
     error_label = tk.Label(main_frame, 
@@ -114,7 +128,10 @@ else:
             if s <= 0 or s > 1:
                 raise ValueError('MVIC percentage must be between 0 and 100')
             error_var.set('')
-            subprocess.Popen([sys.executable, __file__, '--run', str(s), str(t)])
+            args = [sys.executable, __file__, '--run', str(s), str(t)]
+            if animate_var.get():
+                args.append('--animate')
+            subprocess.Popen(args)
         except ValueError as e:
             error_var.set(f'Error: {str(e)}')
         except Exception as e:
@@ -711,6 +728,107 @@ if endurtime is not None:
              horizontalalignment='right',
              verticalalignment='top',
              bbox=dict(facecolor='white', alpha=0.8))
+
+if _CLI_ANIMATE:
+    animate_mus = [0, 19, 39, 59, 79, 99, 119]
+    animate_idx = np.array([mu for mu in animate_mus if mu < nu], dtype=int)
+    n_active = int(animate_idx.size)
+
+    if n_active > 0:
+        fig_anim, ax_anim = plt.subplots(figsize=(6, 6))
+
+        # Arrange the 7 MUs like a small bundle of muscle fibers (cross-section)
+        # Layout: center + hex-like ring positions
+        base_positions = np.array(
+            [
+                [0.0, 0.0],
+                [1.2, 0.2],
+                [0.7, 1.1],
+                [-0.6, 1.0],
+                [-1.2, 0.0],
+                [-0.6, -1.0],
+                [0.7, -1.1],
+            ],
+            dtype=float,
+        )
+        pos = base_positions[:n_active]
+        xs = pos[:, 0]
+        ys = pos[:, 1]
+
+        mu_numbers = animate_idx + 1
+
+        # Size circles by MU index (MU1 smallest ... MU120 largest)
+        # matplotlib scatter sizes are in points^2
+        min_s = 450.0
+        max_s = 3400.0
+        size_scale = (mu_numbers.astype(float) - 1.0) / max(float(nu - 1), 1.0)
+        sizes = min_s + (max_s - min_s) * size_scale
+
+        mupt_active = muPt[animate_idx, :]
+        max_val = float(np.max(mupt_active)) if np.max(mupt_active) > 0 else 1.0
+
+        force_cmap = LinearSegmentedColormap.from_list('force_red', ['#ffd6d6', '#8b0000'])
+
+        vals0 = mupt_active[:, 0] / max_val
+        colors0 = force_cmap(vals0)
+        colors0[:, 3] = np.where(mupt_active[:, 0] > 0, 1.0, 0.0)  # transparent if force == 0
+
+        sc = ax_anim.scatter(
+            xs,
+            ys,
+            s=sizes,
+            facecolors=colors0,
+            edgecolors='black',
+            linewidths=0.8,
+        )
+
+        # Labels for each MU
+        label_texts = []
+        for i, mu_num in enumerate(mu_numbers):
+            label_texts.append(
+                ax_anim.text(
+                    xs[i],
+                    ys[i],
+                    f'MU{mu_num}',
+                    ha='center',
+                    va='center',
+                    fontsize=9,
+                    color='black',
+                )
+            )
+
+        ax_anim.set_aspect('equal', adjustable='box')
+        ax_anim.set_xlim(xs.min() - 2.0, xs.max() + 2.0)
+        ax_anim.set_ylim(ys.min() - 2.0, ys.max() + 2.0)
+        ax_anim.set_xticks([])
+        ax_anim.set_yticks([])
+        ax_anim.set_title('Realtime Motor Unit Contractions')
+        time_text = ax_anim.text(0.02, 0.98, '', transform=ax_anim.transAxes, ha='left', va='top')
+
+        # Colorbar for normalized force
+        mappable = plt.cm.ScalarMappable(cmap=force_cmap, norm=plt.Normalize(vmin=0.0, vmax=1.0))
+        mappable.set_array([])
+        plt.colorbar(mappable, ax=ax_anim, fraction=0.046, pad=0.04, label='Normalized force')
+
+        interval_ms = int(round(1000.0 / samprate)) if samprate > 0 else 100
+
+        def _update(frame_i):
+            vals = mupt_active[:, frame_i] / max_val
+            rgba = force_cmap(vals)
+            rgba[:, 3] = np.where(mupt_active[:, frame_i] > 0, 1.0, 0.0)  # transparent if force == 0
+            sc.set_facecolor(rgba)
+            time_text.set_text(f't = {time[frame_i]:.2f} s')
+            return (sc, time_text, *label_texts)
+
+        mu_anim = mpl_animation.FuncAnimation(
+            fig_anim,
+            _update,
+            frames=fthsamp,
+            interval=interval_ms,
+            blit=False,
+            repeat=False,
+        )
+        fig_anim._mu_anim = mu_anim
 plt.show()
 
 # End of script

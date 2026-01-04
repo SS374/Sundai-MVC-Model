@@ -715,14 +715,6 @@ axC.legend(loc='center right', bbox_to_anchor=(-0.22, 0.5), fontsize=7)
 axB.legend(loc='center left', bbox_to_anchor=(1.22, 0.5), fontsize=7)
 axD.legend(loc='center left', bbox_to_anchor=(1.22, 0.5), fontsize=7)
 
-# Add text annotation to Panel D
-if endurtime is not None:
-    axD.text(0.98, 0.95, f'Endurance: {endurtime:.1f}s',
-             transform=axD.transAxes,
-             horizontalalignment='right',
-             verticalalignment='top',
-             bbox=dict(facecolor='white', alpha=0.8))
-
 if _CLI_ANIMATE:
     animate_mus = [0, 19, 39, 59, 79, 99, 119]
     animate_idx = np.array([mu for mu in animate_mus if mu < nu], dtype=int)
